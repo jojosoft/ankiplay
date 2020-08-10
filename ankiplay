@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Audio on Anki cards is sometimes very fluctuant in audio volume.
+# This script allows normalized playback of an audio file (argument 1).
+# It uses ffmpeg and aplay to normalize and play back in real-time.
+
+if [[ "$1" =~ \.yomi ]]
+then
+	# b=on disables fading for first and last few frames.
+	# Compression necessary for NHK audio? Does not do very much.
+	# Weird: Normalization has the opposite effect?! (道路 vs. 標識)
+	#filter="compand=attacks=0:points=-70/-70|-18/-18|0/-15"
+	#filter="$filter,dynaudnorm=f=250:g=5:p=0.5:m=30.0:b=on,volume=0.4"
+	#filter="loudnorm"
+	# In the end, NHK seems to be best off with no modifications.
+	# Wait: dual_mono takes care of the known 道路 vs. 標識 problem!
+	filter="loudnorm=dual_mono=true,volume=1.25"
+elif [[ "${1##*/}" =~ ^recording- ]]
+then
+	# Manual recordings depend on the system volume, normalize them.
+	# They are always stereo, so no further configuration is needed.
+	filter="loudnorm"
+elif [[ "${1##*/}" =~ ^JLPT_Tango ]]
+then
+	# For Tango, loudnorm (even with dual_mono set) does not work.
+	# The word at the beginning is too loud, the sentence to quiet.
+	# It sounds better when the audio has been compressed first.
+	filter="compand=attacks=0:points=-70/-70|-18/-18|0/-15"
+	filter="$filter,loudnorm=dual_mono=true"
+else
+	# Dynamically normalize and fade in all other (substudy) audio.
+	filter="dynaudnorm=f=250:g=5:p=0.5:m=30.0"
+	filter="$filter,volume=0.45,afade=t=in:ss=0:d=1:curve=qsin"
+fi
+# This is a solution without using pipes. (However that works...)
+aplay -q < <(ffmpeg -v error -i "$1" -af "$filter" -f wav -)
+
+# Helpful to get mplayer working: https://stackoverflow.com/a/40638110
+# (But it's really not worth it, since aplay does the job without this.)
+#ffmpeg -v error -i "$1" -af "dynaudnorm=f=250:g=13:p=0.4:m=30.0" -f wav - \
+#	| mplayer -cache 1024 -cache-min 10 -really-quiet -
